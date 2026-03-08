@@ -63,9 +63,12 @@ export default function PlagiarismChecker() {
     if (!text.trim()) return;
     setLoading(true);
     setResult(null);
+    setParseError(null);
     try {
       const res = await checkPlagiarism(text);
       setResult(res);
+    } catch (err: any) {
+      setParseError(err?.message || "Unable to connect to plagiarism server");
     } finally {
       setLoading(false);
     }
@@ -226,7 +229,7 @@ export default function PlagiarismChecker() {
               <div className="rounded-xl border bg-card p-5 shadow-card">
                 <h2 className="font-semibold text-foreground mb-1">Sentence-Level Analysis</h2>
                 <p className="text-xs text-muted-foreground mb-4">
-                  {result.matches.filter(m => m.similarity >= 80).length} of {result.matches.length} sentences flagged (similarity ≥ 0.80).
+                  {result.matches.filter(m => m.similarity >= 80).length} of {result.matches.length} matches flagged (similarity ≥ 80%).
                 </p>
                 <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                   {result.matches.map((m, i) => {
@@ -246,41 +249,20 @@ export default function PlagiarismChecker() {
                               </span>
                             )}
                             <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                              Sentence #{i + 1}
+                              Match #{i + 1}
                             </span>
                           </div>
                           <p className="text-sm text-foreground font-medium leading-relaxed">"{m.text}"</p>
-                          <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
-                            <Database className="h-3 w-3" /> Source: {m.source}
-                          </p>
                         </div>
                         <div className="text-right shrink-0">
                           <span className={`text-lg font-bold font-display ${getSimilarityColor(m.similarity)}`}>
-                            {(m.similarity / 100).toFixed(2)}
+                            {m.similarity}%
                           </span>
-                          <p className="text-[10px] text-muted-foreground">cosine sim</p>
+                          <p className="text-[10px] text-muted-foreground">similarity</p>
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            )}
-
-            {/* Breakdown */}
-            {result.breakdown.length > 0 && (
-              <div className="rounded-xl border bg-card p-5 shadow-card">
-                <h2 className="font-semibold text-foreground mb-4">Breakdown by Source Type</h2>
-                <div className="space-y-3">
-                  {result.breakdown.map((b) => (
-                    <div key={b.category}>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-muted-foreground">{b.category}</span>
-                        <span className="font-medium text-foreground">{b.percentage}%</span>
-                      </div>
-                      <Progress value={b.percentage} className="h-1.5" />
-                    </div>
-                  ))}
                 </div>
               </div>
             )}

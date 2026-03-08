@@ -1,17 +1,46 @@
 // API calls for VeriText services
 
+const PLAGIARISM_API_URL = "http://127.0.0.1:8000/api/plagiarism-check";
+
 export interface PlagiarismMatch {
   text: string;
-  source: string;
   similarity: number;
 }
 
 export interface PlagiarismResult {
   similarity: number;
   matches: PlagiarismMatch[];
-  breakdown: { category: string; percentage: number }[];
   wordCount: number;
   sentenceCount: number;
+}
+
+export async function checkPlagiarism(text: string): Promise<PlagiarismResult> {
+  const response = await fetch(PLAGIARISM_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to connect to plagiarism server");
+  }
+
+  const data = await response.json();
+
+  const matches: PlagiarismMatch[] = (data.matches || []).map(
+    (m: { matched_text: string; similarity_score: number }) => ({
+      text: m.matched_text,
+      similarity: Math.round(m.similarity_score * 100),
+    })
+  );
+
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const sentenceCount = text.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 10).length || 1;
+  const similarity = matches.length > 0
+    ? Math.round(matches.reduce((sum, m) => sum + m.similarity, 0) / matches.length)
+    : 0;
+
+  return { similarity, matches, wordCount, sentenceCount };
 }
 
 export interface ComparisonResult {
@@ -27,75 +56,6 @@ export interface AIDetectionResult {
 }
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Deterministic hash for a string → number between 0 and 1
-function hashScore(str: string, seed: number = 0): number {
-  let h = seed;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h % 1000) / 1000;
-}
-
-const SOURCES = [
-  "Quora Knowledge Base",
-  "Academic Publications Index",
-  "Wikipedia Corpus",
-  "Open Access Journals",
-  "Research Paper Archive",
-];
-
-export async function checkPlagiarism(text: string): Promise<PlagiarismResult> {
-  await delay(1500);
-
-  // Split into sentences
-  const sentences = text
-    .split(/(?<=[.!?])\s+/)
-    .map(s => s.trim())
-    .filter(s => s.length > 10);
-
-  if (sentences.length === 0) {
-    return { similarity: 0, matches: [], breakdown: [], wordCount: 0, sentenceCount: 0 };
-  }
-
-  const wordCount = text.split(/\s+/).filter(Boolean).length;
-
-  // Generate a similarity score per sentence based on its content
-  const matches: PlagiarismMatch[] = sentences.map((sentence, i) => {
-    const raw = hashScore(sentence, i);
-    // Map to 0.40–0.95 range
-    const similarity = Math.round((0.40 + raw * 0.55) * 100);
-    const source = SOURCES[Math.abs(sentence.length + i) % SOURCES.length];
-    return { text: sentence, source, similarity };
-  });
-
-  // Sort by similarity descending, take top matches
-  matches.sort((a, b) => b.similarity - a.similarity);
-
-  const flagged = matches.filter(m => m.similarity >= 80);
-  const overall = matches.length > 0
-    ? Math.round(matches.reduce((sum, m) => sum + m.similarity, 0) / matches.length)
-    : 0;
-
-  // Breakdown by source type
-  const sourceGroups: Record<string, number[]> = {};
-  for (const m of matches) {
-    if (!sourceGroups[m.source]) sourceGroups[m.source] = [];
-    sourceGroups[m.source].push(m.similarity);
-  }
-  const breakdown = Object.entries(sourceGroups).map(([category, scores]) => ({
-    category,
-    percentage: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
-  }));
-
-  return {
-    similarity: overall,
-    matches,
-    breakdown,
-    wordCount,
-    sentenceCount: sentences.length,
-  };
-}
 
 export async function compareDocuments(doc1: string, doc2: string): Promise<ComparisonResult> {
   await delay(2000);
