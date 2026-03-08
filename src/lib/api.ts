@@ -43,6 +43,20 @@ export async function checkPlagiarism(text: string): Promise<PlagiarismResult> {
   return { similarity, matches, wordCount, sentenceCount };
 }
 
+export interface ComparisonResult {
+  similarity: number;
+  differences: { type: 'addition' | 'deletion' | 'change'; text: string; position: number }[];
+  doc1Lines: string[];
+  doc2Lines: string[];
+}
+
+export interface AIDetectionResult {
+  aiProbability: number;
+  sentences: { text: string; probability: number; suspicious: boolean }[];
+}
+
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function compareDocuments(doc1: string, doc2: string): Promise<ComparisonResult> {
   await delay(2000);
   const doc1Lines = doc1.split('\n').filter(l => l.trim());
