@@ -7,7 +7,7 @@ import { checkPlagiarism, type PlagiarismResult } from "@/lib/api";
 import { extractTextFromFile } from "@/lib/file-parser";
 import {
   FileSearch, Upload, Loader2, Brain, Database, Search,
-  BarChart3, AlertTriangle, CheckCircle, Info, FileText, XCircle,
+  BarChart3, AlertTriangle, CheckCircle, Info, FileText, XCircle, X, File,
 } from "lucide-react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
@@ -31,12 +31,32 @@ function Stats({ wordCount, sentenceCount, similarity }: { wordCount: number; se
 const getSimilarityColor = (v: number) => v > 50 ? "text-destructive" : v > 25 ? "text-warning" : "text-success";
 const getSimilarityBg = (v: number) => v > 50 ? "bg-destructive/10 border-destructive/20" : v > 25 ? "bg-warning/10 border-warning/20" : "bg-success/10 border-success/20";
 
+function getFileIcon(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (ext === "docx") return "DOCX";
+  return "TXT";
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface UploadedFile {
+  name: string;
+  size: number;
+  wordCount: number;
+}
+
 export default function PlagiarismChecker() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [parsing, setParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
   const [result, setResult] = useState<PlagiarismResult | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleCheck = async () => {
@@ -64,14 +84,27 @@ export default function PlagiarismChecker() {
         return;
       }
       setText(extracted);
+      setUploadedFile({
+        name: file.name,
+        size: file.size,
+        wordCount: extracted.trim().split(/\s+/).length,
+      });
     } catch (err: any) {
       setParseError(err?.message || "Failed to parse the file.");
     } finally {
       setParsing(false);
-      // Reset file input so the same file can be re-uploaded
       if (fileRef.current) fileRef.current.value = "";
     }
   };
+
+  const handleClearFile = () => {
+    setUploadedFile(null);
+    setText("");
+    setResult(null);
+    setParseError(null);
+  };
+
+  const showTextarea = !uploadedFile;
 
   return (
     <DashboardLayout>
@@ -89,12 +122,37 @@ export default function PlagiarismChecker() {
 
         {/* Input */}
         <div className="rounded-xl border bg-card p-5 shadow-card">
-          <Textarea
-            placeholder="Paste your text here or upload a file to check for plagiarism..."
-            className="min-h-[200px] resize-none mb-4 border-muted"
-            value={text}
-            onChange={(e) => { setText(e.target.value); setParseError(null); }}
-          />
+          {showTextarea ? (
+            <Textarea
+              placeholder="Paste your text here or upload a file to check for plagiarism..."
+              className="min-h-[200px] resize-none mb-4 border-muted"
+              value={text}
+              onChange={(e) => { setText(e.target.value); setParseError(null); }}
+            />
+          ) : (
+            /* Uploaded file card */
+            <div className="mb-4 rounded-lg border bg-secondary/30 p-4 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <File className="h-6 w-6 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-foreground truncate">{uploadedFile.name}</p>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">
+                    {getFileIcon(uploadedFile.name)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="text-xs text-muted-foreground">{formatFileSize(uploadedFile.size)}</span>
+                  <span className="text-xs text-muted-foreground">•</span>
+                  <span className="text-xs text-muted-foreground">{uploadedFile.wordCount} words</span>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" onClick={handleClearFile} className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
 
           {parseError && (
             <div className="flex items-center gap-2 mb-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
@@ -126,7 +184,7 @@ export default function PlagiarismChecker() {
           </div>
         )}
 
-        {/* Empty state — no text entered yet */}
+        {/* Empty state */}
         {!loading && !result && !text.trim() && (
           <div className="rounded-xl border border-dashed bg-card/50 p-10 shadow-card flex flex-col items-center gap-3 text-center animate-fade-in">
             <FileText className="h-10 w-10 text-muted-foreground/40" />
@@ -140,7 +198,6 @@ export default function PlagiarismChecker() {
         {/* Results */}
         {result && (
           <div className="space-y-4 animate-fade-in">
-            {/* Stats */}
             <Stats wordCount={result.wordCount} sentenceCount={result.sentenceCount} similarity={result.similarity} />
 
             {/* Overall Score */}

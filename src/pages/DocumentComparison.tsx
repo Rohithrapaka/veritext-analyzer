@@ -1,13 +1,12 @@
 import { useState, useRef } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { extractTextFromFile } from "@/lib/file-parser";
 import { compareTexts, type ComparisonReport, type SentenceComparison } from "@/lib/text-compare";
 import {
   GitCompare, Upload, Loader2, FileText, XCircle, RotateCcw,
-  CheckCircle, AlertTriangle, Minus,
+  CheckCircle, AlertTriangle, Minus, File, X,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -29,13 +28,30 @@ const typeLabel = (t: string) =>
 const simColor = (v: number) =>
   v >= 70 ? "text-success" : v >= 40 ? "text-warning" : "text-destructive";
 
-/* ───── upload card ───── */
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
-interface DocCardProps {
+function getFileType(name: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (ext === "pdf") return "PDF";
+  if (ext === "docx") return "DOCX";
+  return "TXT";
+}
+
+/* ───── upload card (file-only, no textarea) ───── */
+
+interface UploadedFileInfo {
+  name: string;
+  size: number;
+  wordCount: number;
+}
+
+interface DocUploadCardProps {
   label: string;
-  text: string;
-  setText: (v: string) => void;
-  fileName: string | null;
+  file: UploadedFileInfo | null;
   parsing: boolean;
   error: string | null;
   onUpload: () => void;
@@ -44,29 +60,11 @@ interface DocCardProps {
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
-function DocCard({ label, text, setText, fileName, parsing, error, onUpload, onClear, fileRef, onFileChange }: DocCardProps) {
-  const wc = text.trim() ? text.trim().split(/\s+/).length : 0;
+function DocUploadCard({ label, file, parsing, error, onUpload, onClear, fileRef, onFileChange }: DocUploadCardProps) {
   return (
     <div className="rounded-xl border bg-card p-4 shadow-card flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <span className="text-sm font-semibold text-foreground">{label}</span>
-        <div className="flex items-center gap-2">
-          {fileName && (
-            <span className="text-[10px] bg-secondary text-secondary-foreground px-2 py-0.5 rounded-full truncate max-w-[120px]">
-              {fileName}
-            </span>
-          )}
-          <input type="file" ref={fileRef} className="hidden" accept=".pdf,.docx,.txt" onChange={onFileChange} />
-          <Button variant="ghost" size="sm" onClick={onUpload} disabled={parsing} className="gap-1 text-xs h-7">
-            {parsing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-            {parsing ? "Extracting…" : "Upload"}
-          </Button>
-          {text && (
-            <Button variant="ghost" size="sm" onClick={onClear} className="text-xs h-7 text-muted-foreground">
-              Clear
-            </Button>
-          )}
-        </div>
       </div>
 
       {error && (
@@ -75,15 +73,53 @@ function DocCard({ label, text, setText, fileName, parsing, error, onUpload, onC
         </div>
       )}
 
-      <Textarea
-        placeholder="Paste text here or upload a file…"
-        className="flex-1 min-h-[140px] resize-none border-muted text-sm"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-      />
+      <input type="file" ref={fileRef} className="hidden" accept=".pdf,.docx,.txt" onChange={onFileChange} />
 
-      {text && (
-        <p className="text-[10px] text-muted-foreground mt-2">{wc} words</p>
+      {!file ? (
+        /* Drop zone / upload prompt */
+        <button
+          onClick={onUpload}
+          disabled={parsing}
+          className="flex-1 min-h-[140px] rounded-lg border-2 border-dashed border-muted hover:border-primary/40 bg-secondary/20 hover:bg-secondary/40 transition-colors flex flex-col items-center justify-center gap-3 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {parsing ? (
+            <>
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm font-medium text-muted-foreground">Extracting text…</p>
+            </>
+          ) : (
+            <>
+              <Upload className="h-8 w-8 text-muted-foreground/50" />
+              <div className="text-center">
+                <p className="text-sm font-medium text-muted-foreground">Click to upload</p>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">PDF, DOCX, or TXT</p>
+              </div>
+            </>
+          )}
+        </button>
+      ) : (
+        /* File info card */
+        <div className="flex-1 rounded-lg border bg-secondary/30 p-4 flex items-center gap-4">
+          <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <File className="h-6 w-6 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-foreground truncate">{file.name}</p>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded-full shrink-0">
+                {getFileType(file.name)}
+              </span>
+            </div>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="text-xs text-muted-foreground">{formatFileSize(file.size)}</span>
+              <span className="text-xs text-muted-foreground">•</span>
+              <span className="text-xs text-muted-foreground">{file.wordCount} words</span>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClear} className="shrink-0 h-8 w-8 text-muted-foreground hover:text-destructive">
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -114,10 +150,10 @@ function SentenceRow({ s, index }: { s: SentenceComparison; index: number }) {
 /* ───── main page ───── */
 
 export default function DocumentComparison() {
-  const [doc1, setDoc1] = useState("");
-  const [doc2, setDoc2] = useState("");
-  const [file1Name, setFile1Name] = useState<string | null>(null);
-  const [file2Name, setFile2Name] = useState<string | null>(null);
+  const [doc1Text, setDoc1Text] = useState("");
+  const [doc2Text, setDoc2Text] = useState("");
+  const [file1, setFile1] = useState<UploadedFileInfo | null>(null);
+  const [file2, setFile2] = useState<UploadedFileInfo | null>(null);
   const [parsing1, setParsing1] = useState(false);
   const [parsing2, setParsing2] = useState(false);
   const [error1, setError1] = useState<string | null>(null);
@@ -128,38 +164,43 @@ export default function DocumentComparison() {
   const file1Ref = useRef<HTMLInputElement>(null!);
   const file2Ref = useRef<HTMLInputElement>(null!);
 
-  const handleFile = (setter: (v: string) => void, setName: (v: string | null) => void, setParsing: (v: boolean) => void, setErr: (v: string | null) => void, ref: React.RefObject<HTMLInputElement>) =>
+  const makeFileHandler = (
+    setTextFn: (v: string) => void,
+    setFileFn: (v: UploadedFileInfo | null) => void,
+    setParsingFn: (v: boolean) => void,
+    setErrFn: (v: string | null) => void,
+    ref: React.RefObject<HTMLInputElement>,
+  ) =>
     async (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setParsing(true);
-      setErr(null);
+      const f = e.target.files?.[0];
+      if (!f) return;
+      setParsingFn(true);
+      setErrFn(null);
       setResult(null);
       try {
-        const text = await extractTextFromFile(file);
-        if (!text.trim()) { setErr("File appears empty."); return; }
-        setter(text);
-        setName(file.name);
+        const text = await extractTextFromFile(f);
+        if (!text.trim()) { setErrFn("File appears empty."); return; }
+        setTextFn(text);
+        setFileFn({ name: f.name, size: f.size, wordCount: text.trim().split(/\s+/).length });
       } catch (err: any) {
-        setErr(err?.message || "Failed to parse file.");
+        setErrFn(err?.message || "Failed to parse file.");
       } finally {
-        setParsing(false);
+        setParsingFn(false);
         if (ref.current) ref.current.value = "";
       }
     };
 
   const handleCompare = async () => {
     setCompareError(null);
-    if (!doc1.trim() || !doc2.trim()) {
-      setCompareError("Please provide content for both documents before comparing.");
+    if (!doc1Text.trim() || !doc2Text.trim()) {
+      setCompareError("Please upload both documents before comparing.");
       return;
     }
     setLoading(true);
     setResult(null);
-    // Run in next tick to allow UI update
     await new Promise((r) => setTimeout(r, 50));
     try {
-      const res = compareTexts(doc1, doc2);
+      const res = compareTexts(doc1Text, doc2Text);
       setResult(res);
     } catch {
       setCompareError("Comparison failed. Please try again.");
@@ -169,8 +210,8 @@ export default function DocumentComparison() {
   };
 
   const handleReset = () => {
-    setDoc1(""); setDoc2("");
-    setFile1Name(null); setFile2Name(null);
+    setDoc1Text(""); setDoc2Text("");
+    setFile1(null); setFile2(null);
     setError1(null); setError2(null);
     setResult(null); setCompareError(null);
   };
@@ -185,29 +226,41 @@ export default function DocumentComparison() {
           </div>
           <div>
             <h1 className="font-display text-xl font-bold text-foreground">Document Comparison</h1>
-            <p className="text-sm text-muted-foreground">Upload or paste two documents — comparison runs entirely in your browser.</p>
+            <p className="text-sm text-muted-foreground">Upload two documents to compare — runs entirely in your browser.</p>
           </div>
         </div>
 
         {/* Upload Area */}
         <div className="grid md:grid-cols-2 gap-4">
-          <DocCard label="Document 1" text={doc1} setText={(v) => { setDoc1(v); setResult(null); }} fileName={file1Name}
-            parsing={parsing1} error={error1} onUpload={() => file1Ref.current?.click()}
-            onClear={() => { setDoc1(""); setFile1Name(null); setError1(null); setResult(null); }}
-            fileRef={file1Ref} onFileChange={handleFile(setDoc1, setFile1Name, setParsing1, setError1, file1Ref)} />
-          <DocCard label="Document 2" text={doc2} setText={(v) => { setDoc2(v); setResult(null); }} fileName={file2Name}
-            parsing={parsing2} error={error2} onUpload={() => file2Ref.current?.click()}
-            onClear={() => { setDoc2(""); setFile2Name(null); setError2(null); setResult(null); }}
-            fileRef={file2Ref} onFileChange={handleFile(setDoc2, setFile2Name, setParsing2, setError2, file2Ref)} />
+          <DocUploadCard
+            label="Document 1"
+            file={file1}
+            parsing={parsing1}
+            error={error1}
+            onUpload={() => file1Ref.current?.click()}
+            onClear={() => { setDoc1Text(""); setFile1(null); setError1(null); setResult(null); }}
+            fileRef={file1Ref}
+            onFileChange={makeFileHandler(setDoc1Text, setFile1, setParsing1, setError1, file1Ref)}
+          />
+          <DocUploadCard
+            label="Document 2"
+            file={file2}
+            parsing={parsing2}
+            error={error2}
+            onUpload={() => file2Ref.current?.click()}
+            onClear={() => { setDoc2Text(""); setFile2(null); setError2(null); setResult(null); }}
+            fileRef={file2Ref}
+            onFileChange={makeFileHandler(setDoc2Text, setFile2, setParsing2, setError2, file2Ref)}
+          />
         </div>
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3">
-          <Button onClick={handleCompare} disabled={loading || parsing1 || parsing2} className="gradient-hero text-primary-foreground border-0 gap-2">
+          <Button onClick={handleCompare} disabled={loading || parsing1 || parsing2 || !doc1Text.trim() || !doc2Text.trim()} className="gradient-hero text-primary-foreground border-0 gap-2">
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GitCompare className="h-4 w-4" />}
             {loading ? "Comparing…" : "Compare Documents"}
           </Button>
-          {(doc1 || doc2 || result) && (
+          {(file1 || file2 || result) && (
             <Button variant="outline" onClick={handleReset} className="gap-2">
               <RotateCcw className="h-4 w-4" /> Reset
             </Button>
@@ -230,12 +283,12 @@ export default function DocumentComparison() {
         )}
 
         {/* Empty State */}
-        {!loading && !result && !doc1.trim() && !doc2.trim() && (
+        {!loading && !result && !file1 && !file2 && (
           <div className="rounded-xl border border-dashed bg-card/50 p-10 shadow-card flex flex-col items-center gap-3 text-center animate-fade-in">
             <FileText className="h-10 w-10 text-muted-foreground/40" />
             <p className="font-medium text-muted-foreground">No documents loaded</p>
             <p className="text-xs text-muted-foreground max-w-sm">
-              Paste text or upload PDF, DOCX, or TXT files into both panels above, then click Compare.
+              Upload PDF, DOCX, or TXT files into both panels above, then click Compare.
             </p>
           </div>
         )}
@@ -293,12 +346,12 @@ export default function DocumentComparison() {
             {/* Side-by-Side Diff */}
             <div className="grid md:grid-cols-2 gap-4">
               {[
-                { title: "Document 1", sentences: result.doc1Sentences },
-                { title: "Document 2", sentences: result.doc2Sentences },
+                { title: file1?.name || "Document 1", sentences: result.doc1Sentences },
+                { title: file2?.name || "Document 2", sentences: result.doc2Sentences },
               ].map((panel) => (
                 <div key={panel.title} className="rounded-xl border bg-card shadow-card overflow-hidden">
                   <div className="px-4 py-3 border-b bg-secondary/30">
-                    <h3 className="text-sm font-semibold text-foreground">{panel.title}</h3>
+                    <h3 className="text-sm font-semibold text-foreground truncate">{panel.title}</h3>
                     <p className="text-[10px] text-muted-foreground">{panel.sentences.length} sentences analyzed</p>
                   </div>
                   <ScrollArea className="h-[400px]">
