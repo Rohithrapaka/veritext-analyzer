@@ -5,11 +5,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { detectAI, type AIDetectionResult } from "@/lib/api";
 import { Bot, Loader2 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function AIDetector() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIDetectionResult | null>(null);
+  const { toast } = useToast();
 
   const handleAnalyze = async () => {
     if (!text.trim()) return;
@@ -17,6 +19,12 @@ export default function AIDetector() {
     try {
       const res = await detectAI(text);
       setResult(res);
+    } catch (error) {
+      toast({
+        title: "Analysis Failed",
+        description: error instanceof Error ? error.message : "Unable to analyze text. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
