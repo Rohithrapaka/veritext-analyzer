@@ -105,7 +105,10 @@ ${sentences.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
     });
 
     if (!response.ok) {
-      throw new Error("Gemini API request failed");
+      if (response.status === 429) {
+        throw new Error("API quota exceeded. Please wait a minute or check your Google Cloud billing.");
+      }
+      throw new Error(`Gemini API error (${response.status})`);
     }
 
     const data = await response.json();
