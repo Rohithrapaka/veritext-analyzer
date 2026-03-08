@@ -73,19 +73,58 @@ export async function compareDocuments(doc1: string, doc2: string): Promise<Comp
   };
 }
 
+const GEMINI_API_KEY = "AIzaSyDED9J1FMqhP1kHsXyxx0iytAm-rDn_aO4";
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+
 export async function detectAI(text: string): Promise<AIDetectionResult> {
-  await delay(2000);
-  const sentences = text.split(/[.!?]+/).filter(s => s.trim()).map((s, i) => ({
-    text: s.trim() + '.',
-    probability: [12, 87, 34, 91, 8, 72, 45, 95][i % 8],
-    suspicious: [12, 87, 34, 91, 8, 72, 45, 95][i % 8] > 60,
-  }));
-  return {
-    aiProbability: 42,
-    sentences: sentences.length ? sentences : [
-      { text: "This is a sample sentence for analysis.", probability: 12, suspicious: false },
-      { text: "The algorithm processes natural language patterns.", probability: 87, suspicious: true },
-      { text: "Results indicate significant improvements.", probability: 34, suspicious: false },
-    ],
-  };
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 5).map(s => s.trim() + '.');
+
+  if (sentences.length === 0) {
+    return { aiProbability: 0, sentences: [] };
+  }
+
+  const prompt = `You are an AI content detector. Analyze each sentence below and estimate the probability (0-100) that it was written by an AI language model.
+
+Return ONLY a valid JSON object in this exact format, no markdown, no code fences:
+{"overall":50,"sentences":[{"text":"...","probability":50}]}
+
+"overall" is the weighted average AI probability for the full text.
+Each sentence object has the original "text" and a "probability" (0-100).
+
+Sentences to analyze:
+${sentences.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+
+  try {
+    const response = await fetch(GEMINI_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1 },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Gemini API request failed");
+    }
+
+    const data = await response.json();
+    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    
+    // Strip markdown code fences if present
+    const cleanText = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const parsed = JSON.parse(cleanText);
+
+    return {
+      aiProbability: Math.round(parsed.overall ?? 0),
+      sentences: (parsed.sentences || []).map((s: { text: string; probability: number }) => ({
+        text: s.text,
+        probability: Math.round(s.probability),
+        suspicious: s.probability > 60,
+      })),
+    };
+  } catch (error) {
+    console.error("AI detection error:", error);
+    throw new Error("Unable to analyze text. Please try again.");
+  }
 }
