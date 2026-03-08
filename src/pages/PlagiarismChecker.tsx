@@ -63,9 +63,12 @@ export default function PlagiarismChecker() {
     if (!text.trim()) return;
     setLoading(true);
     setResult(null);
+    setParseError(null);
     try {
       const res = await checkPlagiarism(text);
       setResult(res);
+    } catch (err: any) {
+      setParseError(err?.message || "Unable to connect to plagiarism server");
     } finally {
       setLoading(false);
     }
