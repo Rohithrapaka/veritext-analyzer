@@ -1,6 +1,6 @@
 // API calls for VeriText services
 
-const PLAGIARISM_API_URL = "http://127.0.0.1:8000/api/plagiarism-check";
+const PLAGIARISM_API_URL = "https://veritext-backend-cfnq.onrender.com/api/plagiarism-check";
 
 export interface PlagiarismMatch {
   text: string;
