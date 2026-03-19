@@ -1,11 +1,6 @@
 // API calls for VeriText services
 
-const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_BASE_URL ||
-  "https://rapakarohith-veritext-backend.hf.space";
-
-const PLAGIARISM_API_URL = ${API_BASE_URL}/api/plagiarism-check;
-const AI_DETECT_API_URL = ${API_BASE_URL}/api/ai-detect;
+const PLAGIARISM_API_URL = "https://veritext-backend-cfnq.onrender.com/api/plagiarism-check";
 
 export interface PlagiarismMatch {
   text: string;
@@ -50,7 +45,7 @@ export async function checkPlagiarism(text: string): Promise<PlagiarismResult> {
       }
 
       if (!response.ok) {
-        throw new Error(Server error: ${response.status});
+        throw new Error(`Server error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -144,24 +139,49 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
     return { aiProbability: 0, sentences: [] };
   }
 
-  const response = await fetch(AI_DETECT_API_URL, {
+  const prompt = `You are an AI content detector. Analyze each sentence below and estimate the probability (0-100) that it was written by an AI language model.
+
+Return ONLY valid JSON:
+{"overall":50,"sentences":[{"text":"...","probability":50}]}
+
+Sentences:
+${sentences.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
+
+
+  const response = await fetch(GEMINI_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text })
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1 }
+    })
   });
 
   if (!response.ok) {
-    throw new Error(AI detect error ${response.status});
+    throw new Error(`Gemini API error ${response.status}`);
   }
 
   const data = await response.json();
 
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  const clean = raw.replace(/```json\s*/g, "").replace(/```/g, "").trim();
+
+  const parsed = JSON.parse(clean);
+
   return {
-    aiProbability: Math.round(data.aiProbability ?? 0),
-    sentences: (data.sentences || []).map((s: any) => ({
+    aiProbability: Math.round(parsed.overall ?? 0),
+    sentences: (parsed.sentences || []).map((s: any) => ({
       text: s.text,
       probability: Math.round(s.probability),
-      suspicious: Boolean(s.suspicious)
+      suspicious: s.probability > 60
     }))
   };
 }
+
+
+
+const GEMINI_API_KEY = "AIzaSyDED9J1FMqhP1kHsXyxx0iytAm-rDn_aO4";
+
+const GEMINI_API_URL =
+  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
