@@ -130,25 +130,91 @@ export async function compareDocuments(doc1: string, doc2: string): Promise<Comp
 
 
 export async function detectAI(text: string): Promise<AIDetectionResult> {
+  const MAX_RETRIES = 5;
 
-  const response = await fetch(AI_DETECT_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text })
-  });
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
-  if (!response.ok) {
-    throw new Error("AI detection failed");
+      const response = await fetch(AI_DETECT_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      // Backend warming up (Render cold start) / gateway may briefly return 503.
+      if (response.status === 503) {
+        console.warn("AI backend warming up... retrying");
+        await delay(3000);
+        continue;
+      }
+
+      if (!response.ok) {
+        // Try to include backend error details so the UI shows the real cause.
+        let detail = "";
+        try {
+          // Sometimes backend returns JSON like { detail: "..."}.
+          const maybeJson = await response.json();
+          detail =
+            maybeJson?.detail ||
+            maybeJson?.error ||
+            maybeJson?.message ||
+            JSON.stringify(maybeJson);
+        } catch {
+          // Fallback to raw text if JSON parsing fails.
+          try {
+            detail = await response.text();
+          } catch {
+            detail = "";
+          }
+        }
+
+        throw new Error(
+          `AI detection failed (HTTP ${response.status}). ${detail}`.trim()
+        );
+      }
+
+      const data = (await response.json()) as any;
+
+      // Be tolerant to different backend response key names.
+      const overall =
+        typeof data?.overall === "number"
+          ? data.overall
+          : typeof data?.aiProbability === "number"
+            ? data.aiProbability
+            : typeof data?.probability === "number"
+              ? data.probability
+              : 0;
+
+      return {
+        aiProbability: Math.round(overall),
+        sentences: (data?.sentences || []).map((s: any) => {
+          const prob =
+            typeof s?.probability === "number"
+              ? s.probability
+              : typeof s?.prob === "number"
+                ? s.prob
+                : 0;
+
+          return {
+            text: (s?.text ?? s?.sentence ?? "").toString(),
+            probability: Math.round(prob),
+            suspicious: prob > 60
+          };
+        })
+      };
+    } catch (err) {
+      if (attempt === MAX_RETRIES - 1) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Unable to analyze AI probability: ${msg}`);
+      }
+      await delay(2000);
+    }
   }
 
-  const data = await response.json();
-
-  return {
-    aiProbability: Math.round(data.overall ?? 0),
-    sentences: (data.sentences || []).map((s: any) => ({
-      text: s.text,
-      probability: Math.round(s.probability),
-      suspicious: s.probability > 60
-    }))
-  };
+  throw new Error("AI backend unavailable");
 }
