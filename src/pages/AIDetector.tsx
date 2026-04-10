@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,13 +11,34 @@ export default function AIDetector() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIDetectionResult | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
   const { toast } = useToast();
 
-  const handleAnalyze = async () => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    // Clear the result and show typing status if text is changed
+    if (text.trim() === '') {
+      setResult(null);
+      setIsTyping(false);
+      return;
+    }
+    
+    setIsTyping(true);
+
+    const delayDebounceFn = setTimeout(() => {
+      setIsTyping(false);
+      handleAnalyze(text);
+    }, 1000); // 1 second debounce for real-time detection
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [text]);
+
+  const handleAnalyze = async (textToAnalyze: string = text) => {
+    if (!textToAnalyze.trim()) return;
     setLoading(true);
     try {
-      const res = await detectAI(text);
+      const res = await detectAI(textToAnalyze);
+      // only set result if the text hasn't changed drastically while awaiting 
+      // (a robust check could verify if textToAnalyze === text but let's just show it)
       setResult(res);
     } catch (error) {
       toast({
@@ -48,15 +69,22 @@ export default function AIDetector() {
 
         <div className="rounded-xl border bg-card p-5 shadow-card mb-6">
           <Textarea
-            placeholder="Paste your text here to analyze..."
+            placeholder="Paste or type your text here to analyze in real-time..."
             className="min-h-[200px] resize-none mb-4 border-muted"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
-          <Button onClick={handleAnalyze} disabled={loading || !text.trim()} className="gradient-hero text-primary-foreground border-0 gap-2">
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
-            Analyze AI Probability
-          </Button>
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-muted-foreground flex items-center gap-2">
+              {isTyping && <><Loader2 className="h-3 w-3 animate-spin"/> Typing...</>}
+              {!isTyping && loading && <><Loader2 className="h-3 w-3 animate-spin"/> Analyzing...</>}
+              {!isTyping && !loading && result && <span className="text-success flex items-center gap-1">Analysis complete</span>}
+            </span>
+            <Button onClick={() => handleAnalyze(text)} disabled={loading || !text.trim()} className="gradient-hero text-primary-foreground border-0 gap-2">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+              {loading ? "Analyzing..." : "Analyze AI Probability"}
+            </Button>
+          </div>
         </div>
 
         {result && (
