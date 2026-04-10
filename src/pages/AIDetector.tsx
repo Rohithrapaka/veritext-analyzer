@@ -3,12 +3,17 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 import { detectAI, type AIDetectionResult } from "@/lib/api";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, Loader2, KeyRound } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AIDetector() {
   const [text, setText] = useState("");
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(
+    !!import.meta.env.VITE_GEMINI_API_KEY || !!localStorage.getItem("gemini_api_key")
+  );
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIDetectionResult | null>(null);
   const [isTyping, setIsTyping] = useState(false);
@@ -26,11 +31,24 @@ export default function AIDetector() {
 
     const delayDebounceFn = setTimeout(() => {
       setIsTyping(false);
-      handleAnalyze(text);
-    }, 1000); // 1 second debounce for real-time detection
+      if (hasApiKey) handleAnalyze(text);
+    }, 2000); // 2 second debounce to prevent hitting Gemini API limits too fast
 
     return () => clearTimeout(delayDebounceFn);
-  }, [text]);
+  }, [text, hasApiKey]);
+
+  const saveApiKey = () => {
+    if (apiKeyInput.trim()) {
+      localStorage.setItem("gemini_api_key", apiKeyInput.trim());
+      setHasApiKey(true);
+      toast({
+        title: "API Key Saved",
+        description: "Your Gemini API key has been saved securely to your browser.",
+      });
+      // trigger analysis if text is already present
+      if (text.trim()) handleAnalyze(text);
+    }
+  };
 
   const handleAnalyze = async (textToAnalyze: string = text) => {
     if (!textToAnalyze.trim()) return;
@@ -63,9 +81,37 @@ export default function AIDetector() {
           </div>
           <div>
             <h1 className="font-display text-xl font-bold text-foreground">AI Content Detector</h1>
-            <p className="text-sm text-muted-foreground">Analyze text to detect AI-generated content.</p>
+            <p className="text-sm text-muted-foreground">Analyze text to detect AI-generated content in real-time.</p>
           </div>
         </div>
+
+        {!hasApiKey && (
+          <div className="rounded-xl border border-warning/50 bg-warning/5 p-5 mb-6 animate-fade-in shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="h-10 w-10 shrink-0 rounded-lg bg-warning/20 flex items-center justify-center">
+                <KeyRound className="h-5 w-5 text-warning-foreground" />
+              </div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <h3 className="font-medium text-foreground">Gemini API Key Required</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    To use the real-time AI detection effectively, please enter your free Google Gemini API key. 
+                    Get one from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-primary underline">Google AI Studio</a>.
+                  </p>
+                </div>
+                <div className="flex gap-2 max-w-md">
+                  <Input 
+                    type="password" 
+                    placeholder="AIzaSy..." 
+                    value={apiKeyInput}
+                    onChange={e => setApiKeyInput(e.target.value)}
+                  />
+                  <Button onClick={saveApiKey}>Save Key</Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl border bg-card p-5 shadow-card mb-6">
           <Textarea
@@ -80,7 +126,7 @@ export default function AIDetector() {
               {!isTyping && loading && <><Loader2 className="h-3 w-3 animate-spin"/> Analyzing...</>}
               {!isTyping && !loading && result && <span className="text-success flex items-center gap-1">Analysis complete</span>}
             </span>
-            <Button onClick={() => handleAnalyze(text)} disabled={loading || !text.trim()} className="gradient-hero text-primary-foreground border-0 gap-2">
+            <Button onClick={() => handleAnalyze(text)} disabled={loading || !text.trim() || !hasApiKey} className="gradient-hero text-primary-foreground border-0 gap-2">
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
               {loading ? "Analyzing..." : "Analyze AI Probability"}
             </Button>
