@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { detectAI, type AIDetectionResult } from "@/lib/api";
-import { Bot, Loader2, KeyRound } from "lucide-react";
+import { Bot, Loader2, KeyRound, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function AIDetector() {
@@ -16,36 +16,30 @@ export default function AIDetector() {
   );
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIDetectionResult | null>(null);
-  const [isTyping, setIsTyping] = useState(false);
+  const [cooldown, setCooldown] = useState(0); // seconds remaining before next request
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { toast } = useToast();
 
   const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
-  const MIN_WORDS = 50;
 
+  // Clear result when text is cleared
   useEffect(() => {
-    // Clear the result when text is empty
-    if (text.trim() === '') {
-      setResult(null);
-      setIsTyping(false);
-      return;
-    }
+    if (text.trim() === '') setResult(null);
+  }, [text]);
 
-    // Don't auto-trigger for short text — save API quota
-    if (wordCount < MIN_WORDS) {
-      setIsTyping(false);
-      return;
-    }
-
-    setIsTyping(true);
-
-    // 5 second debounce — Gemini free tier allows only 15 req/min
-    const delayDebounceFn = setTimeout(() => {
-      setIsTyping(false);
-      if (hasApiKey) handleAnalyze(text);
-    }, 5000);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [text, hasApiKey]);
+  const startCooldown = (seconds: number) => {
+    setCooldown(seconds);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const saveApiKey = () => {
     if (apiKeyInput.trim()) {
@@ -53,28 +47,29 @@ export default function AIDetector() {
       setHasApiKey(true);
       toast({
         title: "API Key Saved",
-        description: "Your Gemini API key has been saved securely to your browser.",
+        description: "Your Gemini API key has been saved. You can now analyze text.",
       });
-      // trigger analysis if text is already present
-      if (text.trim()) handleAnalyze(text);
     }
   };
 
-  const handleAnalyze = async (textToAnalyze: string = text) => {
-    if (!textToAnalyze.trim()) return;
+  const handleAnalyze = async () => {
+    if (!text.trim() || cooldown > 0) return;
     setLoading(true);
     try {
-      const res = await detectAI(textToAnalyze);
-      // only set result if the text hasn't changed drastically while awaiting 
-      // (a robust check could verify if textToAnalyze === text but let's just show it)
+      const res = await detectAI(text);
       setResult(res);
+      startCooldown(10); // 10s cooldown after every successful request
     } catch (error) {
       const raw = error instanceof Error ? error.message : "";
       const isQuota = raw.toLowerCase().includes("quota") || raw.toLowerCase().includes("rate");
+      // Extract retry seconds from Gemini error message e.g. "retry in 51.32s"
+      const retryMatch = raw.match(/retry in ([\d.]+)s/i);
+      const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
+      if (isQuota) startCooldown(retrySeconds);
       toast({
-        title: isQuota ? "Rate Limit Reached" : "Analysis Failed",
+        title: isQuota ? "Rate Limit — Please Wait" : "Analysis Failed",
         description: isQuota
-          ? "You've hit the Gemini free tier limit (15 requests/min). Please wait a minute, then try again."
+          ? `Free tier limit reached. Try again in ${retrySeconds} seconds.`
           : raw || "Unable to analyze text. Please try again.",
         variant: "destructive",
       });
@@ -129,27 +124,31 @@ export default function AIDetector() {
 
         <div className="rounded-xl border bg-card p-5 shadow-card mb-6">
           <Textarea
-            placeholder="Paste your text here (50+ words for auto-analysis, or click the button)..."
+            placeholder="Paste your text here and click Analyze..."
             className="min-h-[200px] resize-none mb-4 border-muted"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground flex items-center gap-2">
-              {isTyping && <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing in 5s...</>}
-              {!isTyping && loading && <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>}
-              {!isTyping && !loading && result && <span className="text-success">✓ Analysis complete</span>}
-              {!isTyping && !loading && !result && wordCount > 0 && wordCount < MIN_WORDS && (
-                <span className="text-muted-foreground">{wordCount} / {MIN_WORDS} words for auto-analysis</span>
+              {loading && <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>}
+              {!loading && result && <span className="text-success">✓ Analysis complete</span>}
+              {!loading && cooldown > 0 && (
+                <span className="flex items-center gap-1 text-warning">
+                  <Clock className="h-3 w-3" /> Next analysis in {cooldown}s
+                </span>
+              )}
+              {!loading && !result && wordCount > 0 && (
+                <span className="text-muted-foreground">{wordCount} words</span>
               )}
             </span>
             <Button
-              onClick={() => handleAnalyze(text)}
-              disabled={loading || !text.trim() || !hasApiKey}
+              onClick={handleAnalyze}
+              disabled={loading || !text.trim() || !hasApiKey || cooldown > 0}
               className="gradient-hero text-primary-foreground border-0 gap-2"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
-              {loading ? "Analyzing..." : "Analyze Now"}
+              {loading ? "Analyzing..." : cooldown > 0 ? `Wait ${cooldown}s` : "Analyze Now"}
             </Button>
           </div>
         </div>
