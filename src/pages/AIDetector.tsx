@@ -19,20 +19,30 @@ export default function AIDetector() {
   const [isTyping, setIsTyping] = useState(false);
   const { toast } = useToast();
 
+  const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+  const MIN_WORDS = 50;
+
   useEffect(() => {
-    // Clear the result and show typing status if text is changed
+    // Clear the result when text is empty
     if (text.trim() === '') {
       setResult(null);
       setIsTyping(false);
       return;
     }
-    
+
+    // Don't auto-trigger for short text — save API quota
+    if (wordCount < MIN_WORDS) {
+      setIsTyping(false);
+      return;
+    }
+
     setIsTyping(true);
 
+    // 5 second debounce — Gemini free tier allows only 15 req/min
     const delayDebounceFn = setTimeout(() => {
       setIsTyping(false);
       if (hasApiKey) handleAnalyze(text);
-    }, 2000); // 2 second debounce to prevent hitting Gemini API limits too fast
+    }, 5000);
 
     return () => clearTimeout(delayDebounceFn);
   }, [text, hasApiKey]);
@@ -59,9 +69,13 @@ export default function AIDetector() {
       // (a robust check could verify if textToAnalyze === text but let's just show it)
       setResult(res);
     } catch (error) {
+      const raw = error instanceof Error ? error.message : "";
+      const isQuota = raw.toLowerCase().includes("quota") || raw.toLowerCase().includes("rate");
       toast({
-        title: "Analysis Failed",
-        description: error instanceof Error ? error.message : "Unable to analyze text. Please try again.",
+        title: isQuota ? "Rate Limit Reached" : "Analysis Failed",
+        description: isQuota
+          ? "You've hit the Gemini free tier limit (15 requests/min). Please wait a minute, then try again."
+          : raw || "Unable to analyze text. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -115,20 +129,27 @@ export default function AIDetector() {
 
         <div className="rounded-xl border bg-card p-5 shadow-card mb-6">
           <Textarea
-            placeholder="Paste or type your text here to analyze in real-time..."
+            placeholder="Paste your text here (50+ words for auto-analysis, or click the button)..."
             className="min-h-[200px] resize-none mb-4 border-muted"
             value={text}
             onChange={(e) => setText(e.target.value)}
           />
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground flex items-center gap-2">
-              {isTyping && <><Loader2 className="h-3 w-3 animate-spin"/> Typing...</>}
-              {!isTyping && loading && <><Loader2 className="h-3 w-3 animate-spin"/> Analyzing...</>}
-              {!isTyping && !loading && result && <span className="text-success flex items-center gap-1">Analysis complete</span>}
+              {isTyping && <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing in 5s...</>}
+              {!isTyping && loading && <><Loader2 className="h-3 w-3 animate-spin" /> Analyzing...</>}
+              {!isTyping && !loading && result && <span className="text-success">✓ Analysis complete</span>}
+              {!isTyping && !loading && !result && wordCount > 0 && wordCount < MIN_WORDS && (
+                <span className="text-muted-foreground">{wordCount} / {MIN_WORDS} words for auto-analysis</span>
+              )}
             </span>
-            <Button onClick={() => handleAnalyze(text)} disabled={loading || !text.trim() || !hasApiKey} className="gradient-hero text-primary-foreground border-0 gap-2">
+            <Button
+              onClick={() => handleAnalyze(text)}
+              disabled={loading || !text.trim() || !hasApiKey}
+              className="gradient-hero text-primary-foreground border-0 gap-2"
+            >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
-              {loading ? "Analyzing..." : "Analyze AI Probability"}
+              {loading ? "Analyzing..." : "Analyze Now"}
             </Button>
           </div>
         </div>
