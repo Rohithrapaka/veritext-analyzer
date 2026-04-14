@@ -64,9 +64,14 @@ export default function AIDetector() {
   const normalizeProbability = (value: number) =>
     Math.round(Math.max(0, Math.min(value > 1 ? value / 100 : value, 1)) * 100);
 
-  // Color helpers based on label
+  // Color helpers based on label - extract base classification before bias label
+  const getBaseClassification = (classification: string) => {
+    return classification.split(" (")[0];
+  };
+
   const getLabelColor = (classification: string) => {
-    switch(classification) {
+    const base = getBaseClassification(classification);
+    switch(base) {
       case "AI Generated": return "text-destructive";
       case "Human Written": return "text-success";
       case "Uncertain": return "text-warning";
@@ -75,7 +80,8 @@ export default function AIDetector() {
   };
 
   const getLabelBg = (classification: string) => {
-    switch(classification) {
+    const base = getBaseClassification(classification);
+    switch(base) {
       case "AI Generated": return "bg-destructive/10 border-destructive/20";
       case "Human Written": return "bg-success/10 border-success/20";
       case "Uncertain": return "bg-warning/10 border-warning/20";

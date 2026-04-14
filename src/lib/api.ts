@@ -102,7 +102,7 @@ export interface ComparisonResult {
 
 
 export interface AIDetectionResult {
-  classification: "AI Generated" | "Human Written" | "Uncertain" | "Error";
+  classification: string;
   score: number;
   confidence: "high" | "medium" | "low";
   message?: string;
@@ -113,6 +113,7 @@ export interface AIDetectionResult {
     structure?: number;
     length_signal?: number;
     reason?: string;
+    humanSignalsDetected?: boolean;
   };
   sentences: Array<{
     text: string;
@@ -123,6 +124,27 @@ export interface AIDetectionResult {
 }
 
 
+
+// Detect human signals (slang, emojis, informal language)
+function detectHumanSignals(text: string): boolean {
+  const lower = text.toLowerCase();
+
+  const humanKeywords = [
+    "lol", "lmao", "idk", "ngl", "bruh", "bro", "wtf",
+    "tbh", "omg", "haha", "uh", "hmm", "yeah", "yep", "nope",
+    "gonna", "wanna", "gotta", "ain't", "y'all", "dunno"
+  ];
+
+  const emojiRegex = /[\p{Emoji}]/gu;
+
+  const keywordMatch = humanKeywords.some(word => {
+    const regex = new RegExp(`\\b${word}\\b`, 'i');
+    return regex.test(text);
+  });
+  const emojiMatch = emojiRegex.test(text);
+
+  return keywordMatch || emojiMatch;
+}
 
 export async function compareDocuments(doc1: string, doc2: string): Promise<ComparisonResult> {
 
@@ -182,21 +204,60 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
       }
 
       const data = await response.json();
-      console.log(data);
+      console.log("API RESPONSE:", data);
 
-      const overall = typeof data.overall === "number" ? data.overall : 0;
-      const normalizedScore = Math.max(0, Math.min(overall, 100));
-      const classification =
-        normalizedScore >= 70 ? "AI Generated" :
-        normalizedScore >= 40 ? "Uncertain" :
-        "Human Written";
+      // Get initial score from backend
+      let score = typeof data.overall === "number" ? data.overall : 0;
+
+      // Apply human signal detection
+      const hasHumanSignals = detectHumanSignals(text);
+      if (hasHumanSignals) {
+        score = score - 25;
+      }
+
+      // Apply short text penalty
+      if (text.length < 120) {
+        score = score - 10;
+      }
+
+      // Clamp score between 0 and 100
+      score = Math.max(0, Math.min(100, score));
+
+      // Determine classification
+      let classification: string;
+      if (score >= 70) {
+        classification = "AI Generated";
+      } else if (score >= 40 && score < 70) {
+        classification = "Uncertain";
+      } else {
+        classification = "Human Written";
+      }
+
+      // Add bias label for informal human style
+      if (hasHumanSignals && score < 70) {
+        classification += " (Informal Human Style)";
+      }
+
+      // Determine confidence
+      let confidence: "high" | "medium" | "low";
+      if (score >= 70 || score < 40) {
+        confidence = "high";
+      } else if (score >= 50 && score < 70) {
+        confidence = "medium";
+      } else {
+        confidence = "low";
+      }
 
       return {
         classification,
-        score: normalizedScore,
-        confidence: normalizedScore >= 70 ? "high" : normalizedScore >= 40 ? "low" : "medium",
+        score,
+        confidence,
         message: data.message,
-        details: data.details || {},
+        details: {
+          ...data.details,
+          humanSignalsDetected: hasHumanSignals,
+          length_signal: text.length < 120 ? 10 : 0
+        },
         sentences: (data?.sentences || []).map((s: any) => {
           const probability = typeof s.probability === "number" ? s.probability : 0;
           const normalizedProbability = Math.max(0, Math.min(probability, 100));
@@ -222,7 +283,9 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
           score: 0,
           confidence: "low",
           message: `AI detection unavailable: ${msg}`,
-          details: {},
+          details: {
+            humanSignalsDetected: detectHumanSignals(text)
+          },
           sentences: []
         };
       }
@@ -236,7 +299,9 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
     score: 0,
     confidence: "low",
     message: "AI detection backend unavailable",
-    details: {},
+    details: {
+      humanSignalsDetected: detectHumanSignals(text)
+    },
     sentences: []
-  };
+  };}
 }
