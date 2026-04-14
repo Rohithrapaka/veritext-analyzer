@@ -10,10 +10,6 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function AIDetector() {
   const [text, setText] = useState("");
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [hasApiKey, setHasApiKey] = useState(
-    !!import.meta.env.VITE_GEMINI_API_KEY || !!localStorage.getItem("gemini_api_key")
-  );
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<AIDetectionResult | null>(null);
   const [cooldown, setCooldown] = useState(0); // seconds remaining before next request
@@ -41,17 +37,6 @@ export default function AIDetector() {
     }, 1000);
   };
 
-  const saveApiKey = () => {
-    if (apiKeyInput.trim()) {
-      localStorage.setItem("gemini_api_key", apiKeyInput.trim());
-      setHasApiKey(true);
-      toast({
-        title: "API Key Saved",
-        description: "Your Gemini API key has been saved. You can now analyze text.",
-      });
-    }
-  };
-
   const handleAnalyze = async () => {
     if (!text.trim() || cooldown > 0) return;
     setLoading(true);
@@ -61,16 +46,9 @@ export default function AIDetector() {
       startCooldown(10); // 10s cooldown after every successful request
     } catch (error) {
       const raw = error instanceof Error ? error.message : "";
-      const isQuota = raw.toLowerCase().includes("quota") || raw.toLowerCase().includes("rate");
-      // Extract retry seconds from Gemini error message e.g. "retry in 51.32s"
-      const retryMatch = raw.match(/retry in ([\d.]+)s/i);
-      const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : 60;
-      if (isQuota) startCooldown(retrySeconds);
       toast({
-        title: isQuota ? "Rate Limit — Please Wait" : "Analysis Failed",
-        description: isQuota
-          ? `Free tier limit reached. Try again in ${retrySeconds} seconds.`
-          : raw || "Unable to analyze text. Please try again.",
+        title: "Analysis Failed",
+        description: raw || "Unable to analyze text. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -78,8 +56,35 @@ export default function AIDetector() {
     }
   };
 
-  const probColor = (v: number) => v > 60 ? "text-destructive" : v > 30 ? "text-warning" : "text-success";
-  const probBg = (v: number) => v > 60 ? "bg-destructive/10" : v > 30 ? "bg-warning/10" : "bg-success/10";
+  // Score to percentage for display
+  const scorePercent = Math.round((result?.score ?? 0) * 100);
+  
+  // Color helpers based on label
+  const getLabelColor = (label: string) => {
+    switch(label) {
+      case "AI": return "text-destructive";
+      case "Human": return "text-success";
+      case "Uncertain": return "text-warning";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getLabelBg = (label: string) => {
+    switch(label) {
+      case "AI": return "bg-destructive/10 border-destructive/20";
+      case "Human": return "bg-success/10 border-success/20";
+      case "Uncertain": return "bg-warning/10 border-warning/20";
+      default: return "bg-muted/10 border-muted/20";
+    }
+  };
+
+  const getSentenceLabelColor = (label: string) => {
+    return label === "AI" ? "text-destructive" : label === "Human" ? "text-success" : "text-warning";
+  };
+
+  const getSentenceLabelBg = (label: string) => {
+    return label === "AI" ? "bg-destructive/5 border-destructive/20" : label === "Human" ? "bg-success/5 border-success/20" : "bg-warning/5 border-warning/20";
+  };
 
   return (
     <DashboardLayout>
@@ -90,37 +95,9 @@ export default function AIDetector() {
           </div>
           <div>
             <h1 className="font-display text-xl font-bold text-foreground">AI Content Detector</h1>
-            <p className="text-sm text-muted-foreground">Analyze text to detect AI-generated content in real-time.</p>
+            <p className="text-sm text-muted-foreground">Analyze text to detect AI-generated content with hybrid detection (ML + heuristics).</p>
           </div>
         </div>
-
-        {!hasApiKey && (
-          <div className="rounded-xl border border-warning/50 bg-warning/5 p-5 mb-6 animate-fade-in shadow-sm">
-            <div className="flex items-start gap-4">
-              <div className="h-10 w-10 shrink-0 rounded-lg bg-warning/20 flex items-center justify-center">
-                <KeyRound className="h-5 w-5 text-warning-foreground" />
-              </div>
-              <div className="flex-1 space-y-3">
-                <div>
-                  <h3 className="font-medium text-foreground">Gemini API Key Required</h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    To use the real-time AI detection effectively, please enter your free Google Gemini API key. 
-                    Get one from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-primary underline">Google AI Studio</a>.
-                  </p>
-                </div>
-                <div className="flex gap-2 max-w-md">
-                  <Input 
-                    type="password" 
-                    placeholder="AIzaSy..." 
-                    value={apiKeyInput}
-                    onChange={e => setApiKeyInput(e.target.value)}
-                  />
-                  <Button onClick={saveApiKey}>Save Key</Button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         <div className="rounded-xl border bg-card p-5 shadow-card mb-6">
           <Textarea
@@ -144,7 +121,7 @@ export default function AIDetector() {
             </span>
             <Button
               onClick={handleAnalyze}
-              disabled={loading || !text.trim() || !hasApiKey || cooldown > 0}
+              disabled={loading || !text.trim() || cooldown > 0}
               className="gradient-hero text-primary-foreground border-0 gap-2"
             >
               {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
@@ -155,34 +132,89 @@ export default function AIDetector() {
 
         {result && (
           <div className="space-y-4 animate-fade-in">
-            <div className="rounded-xl border bg-card p-5 shadow-card">
+            {/* Overall Result Card */}
+            <div className={`rounded-xl border ${getLabelBg(result.label)} p-5 shadow-card`}>
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="font-semibold text-foreground">AI Probability</h2>
+                  <h2 className="font-semibold text-foreground">Classification</h2>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {result.aiProbability > 60 ? "Likely AI-generated" : result.aiProbability > 30 ? "Possibly AI-generated" : "Likely human-written"}
+                    {result.label === "AI" && "This text appears to be AI-generated"}
+                    {result.label === "Human" && "This text appears to be human-written"}
+                    {result.label === "Uncertain" && "This text has mixed characteristics"}
+                    {result.label === "Error" && "An error occurred during analysis"}
                   </p>
                 </div>
-                <span className={`font-display text-3xl font-bold ${probColor(result.aiProbability)}`}>
-                  {result.aiProbability}%
-                </span>
+                <div>
+                  <span className={`font-display text-3xl font-bold ${getLabelColor(result.label)}`}>
+                    {result.label}
+                  </span>
+                  <div className={`text-sm font-medium ${getLabelColor(result.label)} text-center mt-1`}>
+                    {scorePercent}% • {result.confidence} confidence
+                  </div>
+                </div>
               </div>
-              <Progress value={result.aiProbability} className="h-2" />
+              <Progress value={scorePercent} className="h-2" />
             </div>
 
-            <div className="rounded-xl border bg-card p-5 shadow-card">
-              <h2 className="font-semibold text-foreground mb-4">Sentence Analysis</h2>
-              <div className="space-y-2">
-                {result.sentences.map((s, i) => (
-                  <div key={i} className={`p-3 rounded-lg border ${s.suspicious ? 'border-destructive/20 bg-destructive/5' : 'border-border bg-muted/30'} flex items-start justify-between gap-4`}>
-                    <p className="text-sm text-foreground flex-1">{s.text}</p>
-                    <span className={`text-xs font-semibold shrink-0 px-2 py-1 rounded-full ${probBg(s.probability)} ${probColor(s.probability)}`}>
-                      {s.probability}%
-                    </span>
-                  </div>
-                ))}
+            {/* Details Card */}
+            {result.details && Object.keys(result.details).length > 0 && (
+              <div className="rounded-xl border bg-card p-5 shadow-card">
+                <h2 className="font-semibold text-foreground mb-4">Analysis Details</h2>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  {result.details.gibberish !== undefined && (
+                    <div>
+                      <p className="text-muted-foreground text-xs">Gibberish Score</p>
+                      <p className="font-medium text-foreground">{Math.round(result.details.gibberish * 100)}%</p>
+                    </div>
+                  )}
+                  {result.details.repetition !== undefined && (
+                    <div>
+                      <p className="text-muted-foreground text-xs">Repetition</p>
+                      <p className="font-medium text-foreground">{Math.round(result.details.repetition * 100)}%</p>
+                    </div>
+                  )}
+                  {result.details.structure !== undefined && (
+                    <div>
+                      <p className="text-muted-foreground text-xs">Structure</p>
+                      <p className="font-medium text-foreground">{Math.round(result.details.structure * 100)}%</p>
+                    </div>
+                  )}
+                  {result.details.llm_score !== undefined && (
+                    <div>
+                      <p className="text-muted-foreground text-xs">LLM Score</p>
+                      <p className="font-medium text-foreground">{Math.round(result.details.llm_score * 100)}%</p>
+                    </div>
+                  )}
+                </div>
+                {result.details.reason && (
+                  <p className="text-sm text-muted-foreground mt-4 p-3 bg-muted/30 rounded border border-border">
+                    {result.details.reason}
+                  </p>
+                )}
               </div>
-            </div>
+            )}
+
+            {/* Sentence Analysis Card */}
+            {result.sentences.length > 0 && (
+              <div className="rounded-xl border bg-card p-5 shadow-card">
+                <h2 className="font-semibold text-foreground mb-4">Sentence Analysis</h2>
+                <div className="space-y-2">
+                  {result.sentences.map((s, i) => (
+                    <div key={i} className={`p-3 rounded-lg border ${getSentenceLabelBg(s.label)} flex items-start justify-between gap-4`}>
+                      <p className="text-sm text-foreground flex-1">{s.text}</p>
+                      <div className="text-right shrink-0">
+                        <p className={`text-xs font-semibold ${getSentenceLabelColor(s.label)}`}>
+                          {s.label}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {Math.round(s.probability * 100)}%
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -102,8 +102,24 @@ export interface ComparisonResult {
 
 
 export interface AIDetectionResult {
-  aiProbability: number;
-  sentences: { text: string; probability: number; suspicious: boolean }[];
+  label: "AI" | "Human" | "Uncertain" | "Error";
+  score: number;
+  confidence: "high" | "medium" | "low";
+  message?: string;
+  details?: {
+    llm_score?: number;
+    gibberish?: number;
+    repetition?: number;
+    structure?: number;
+    length_signal?: number;
+    reason?: string;
+  };
+  sentences: Array<{
+    text: string;
+    probability: number;
+    label: "AI" | "Human" | "Uncertain";
+    suspicious: boolean;
+  }>;
 }
 
 
@@ -167,13 +183,18 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
 
       const data = await response.json();
 
-      // backend returns { overall: number, sentences: [...] }
+      // Handle hybrid detection result
       return {
-        aiProbability: Math.round(data.overall || 0),
+        label: data.label || "Error",
+        score: data.score ?? 0.5,
+        confidence: data.confidence || "low",
+        message: data.message,
+        details: data.details || {},
         sentences: (data?.sentences || []).map((s: any) => ({
           text: s.text || "",
-          probability: Math.round(s.probability || 0),
-          suspicious: (s.probability || 0) > 60
+          probability: s.probability ?? 0,
+          label: s.label || "Uncertain",
+          suspicious: s.suspicious ?? false
         }))
       };
 
@@ -181,12 +202,26 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
       if (attempt === MAX_RETRIES - 1) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("AI Detection failed:", err);
-        throw new Error(`AI detection unavailable: ${msg}`);
+        return {
+          label: "Error",
+          score: 0,
+          confidence: "low",
+          message: `AI detection unavailable: ${msg}`,
+          details: {},
+          sentences: []
+        };
       }
 
       await delay(2000);
     }
   }
 
-  throw new Error("AI detection backend unavailable");
+  return {
+    label: "Error",
+    score: 0,
+    confidence: "low",
+    message: "AI detection backend unavailable",
+    details: {},
+    sentences: []
+  };
 }
