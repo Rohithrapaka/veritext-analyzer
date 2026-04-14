@@ -3,7 +3,6 @@ import { DashboardLayout } from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
 import { detectAI, type AIDetectionResult } from "@/lib/api";
 import { Bot, Loader2, KeyRound, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -56,9 +55,15 @@ export default function AIDetector() {
     }
   };
 
-  // Score to percentage for display
-  const scorePercent = Math.round((result?.score ?? 0) * 100);
-  
+  // Normalize score and convert to percentage for display
+  const normalizedScore = result
+    ? Math.max(0, Math.min(result.score > 1 ? result.score / 100 : result.score, 1))
+    : 0;
+  const scorePercent = Math.round(normalizedScore * 100);
+
+  const normalizeProbability = (value: number) =>
+    Math.round(Math.max(0, Math.min(value > 1 ? value / 100 : value, 1)) * 100);
+
   // Color helpers based on label
   const getLabelColor = (label: string) => {
     switch(label) {
@@ -140,8 +145,8 @@ export default function AIDetector() {
                   <p className="text-xs text-muted-foreground mt-1">
                     {result.label === "AI" && "This text appears to be AI-generated"}
                     {result.label === "Human" && "This text appears to be human-written"}
-                    {result.label === "Uncertain" && "This text has mixed characteristics"}
-                    {result.label === "Error" && "An error occurred during analysis"}
+                    {result.label === "Uncertain" && "This text has mixed characteristics or could not be determined with high confidence"}
+                    {result.label === "Error" && "This text could not be reliably classified"}
                   </p>
                 </div>
                 <div>
@@ -191,6 +196,11 @@ export default function AIDetector() {
                     {result.details.reason}
                   </p>
                 )}
+                {result.message && (
+                  <p className="text-sm text-muted-foreground mt-4 p-3 bg-muted/30 rounded border border-border">
+                    {result.message}
+                  </p>
+                )}
               </div>
             )}
 
@@ -207,7 +217,7 @@ export default function AIDetector() {
                           {s.label}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {Math.round(s.probability * 100)}%
+                          {normalizeProbability(s.probability)}%
                         </p>
                       </div>
                     </div>

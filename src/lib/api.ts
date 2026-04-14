@@ -183,19 +183,25 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
 
       const data = await response.json();
 
-      // Handle hybrid detection result
+      const label = data.label === "Error" ? "Uncertain" : data.label || "Uncertain";
+      const normalizedScore = typeof data.score === "number" ? data.score : 0.5;
+
       return {
-        label: data.label || "Error",
-        score: data.score ?? 0.5,
+        label,
+        score: Math.max(0, Math.min(normalizedScore, 1)),
         confidence: data.confidence || "low",
         message: data.message,
         details: data.details || {},
-        sentences: (data?.sentences || []).map((s: any) => ({
-          text: s.text || "",
-          probability: s.probability ?? 0,
-          label: s.label || "Uncertain",
-          suspicious: s.suspicious ?? false
-        }))
+        sentences: (data?.sentences || []).map((s: any) => {
+          const rawProb = typeof s.probability === "number" ? s.probability : 0;
+          const normalizedProbability = Math.max(0, Math.min(rawProb > 1 ? rawProb / 100 : rawProb, 1));
+          return {
+            text: s.text || "",
+            probability: normalizedProbability,
+            label: s.label === "Error" ? "Uncertain" : s.label || "Uncertain",
+            suspicious: s.suspicious ?? false
+          };
+        })
       };
 
     } catch (err) {
@@ -217,8 +223,8 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
   }
 
   return {
-    label: "Error",
-    score: 0,
+    label: "Uncertain",
+    score: 0.5,
     confidence: "low",
     message: "AI detection backend unavailable",
     details: {},
