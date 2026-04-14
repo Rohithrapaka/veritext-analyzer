@@ -65,19 +65,19 @@ export default function AIDetector() {
     Math.round(Math.max(0, Math.min(value > 1 ? value / 100 : value, 1)) * 100);
 
   // Color helpers based on label
-  const getLabelColor = (label: string) => {
-    switch(label) {
-      case "AI": return "text-destructive";
-      case "Human": return "text-success";
+  const getLabelColor = (classification: string) => {
+    switch(classification) {
+      case "AI Generated": return "text-destructive";
+      case "Human Written": return "text-success";
       case "Uncertain": return "text-warning";
       default: return "text-muted-foreground";
     }
   };
 
-  const getLabelBg = (label: string) => {
-    switch(label) {
-      case "AI": return "bg-destructive/10 border-destructive/20";
-      case "Human": return "bg-success/10 border-success/20";
+  const getLabelBg = (classification: string) => {
+    switch(classification) {
+      case "AI Generated": return "bg-destructive/10 border-destructive/20";
+      case "Human Written": return "bg-success/10 border-success/20";
       case "Uncertain": return "bg-warning/10 border-warning/20";
       default: return "bg-muted/10 border-muted/20";
     }
@@ -138,22 +138,22 @@ export default function AIDetector() {
         {result && (
           <div className="space-y-4 animate-fade-in">
             {/* Overall Result Card */}
-            <div className={`rounded-xl border ${getLabelBg(result.label)} p-5 shadow-card`}>
+            <div className={`rounded-xl border ${getLabelBg(result.classification)} p-5 shadow-card`}>
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="font-semibold text-foreground">Classification</h2>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {result.label === "AI" && "This text appears to be AI-generated"}
-                    {result.label === "Human" && "This text appears to be human-written"}
-                    {result.label === "Uncertain" && "This text has mixed characteristics or could not be determined with high confidence"}
-                    {result.label === "Error" && "This text could not be reliably classified"}
+                    {result.classification === "AI Generated" && "This text appears to be AI-generated"}
+                    {result.classification === "Human Written" && "This text appears to be human-written"}
+                    {result.classification === "Uncertain" && "This text has mixed characteristics or could not be determined with high confidence"}
+                    {result.classification === "Error" && "This text could not be reliably classified"}
                   </p>
                 </div>
                 <div>
-                  <span className={`font-display text-3xl font-bold ${getLabelColor(result.label)}`}>
-                    {result.label}
+                  <span className={`font-display text-3xl font-bold ${getLabelColor(result.classification)}`}>
+                    {result.classification}
                   </span>
-                  <div className={`text-sm font-medium ${getLabelColor(result.label)} text-center mt-1`}>
+                  <div className={`text-sm font-medium ${getLabelColor(result.classification)} text-center mt-1`}>
                     {scorePercent}% • {result.confidence} confidence
                   </div>
                 </div>

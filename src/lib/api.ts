@@ -102,7 +102,7 @@ export interface ComparisonResult {
 
 
 export interface AIDetectionResult {
-  label: "AI" | "Human" | "Uncertain" | "Error";
+  classification: "AI Generated" | "Human Written" | "Uncertain" | "Error";
   score: number;
   confidence: "high" | "medium" | "low";
   message?: string;
@@ -182,24 +182,33 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
       }
 
       const data = await response.json();
+      console.log(data);
 
-      const label = data.label === "Error" ? "Uncertain" : data.label || "Uncertain";
-      const normalizedScore = typeof data.score === "number" ? data.score : 0.5;
+      const overall = typeof data.overall === "number" ? data.overall : 0;
+      const normalizedScore = Math.max(0, Math.min(overall, 100));
+      const classification =
+        normalizedScore >= 70 ? "AI Generated" :
+        normalizedScore >= 40 ? "Uncertain" :
+        "Human Written";
 
       return {
-        label,
-        score: Math.max(0, Math.min(normalizedScore, 1)),
-        confidence: data.confidence || "low",
+        classification,
+        score: normalizedScore,
+        confidence: normalizedScore >= 70 ? "high" : normalizedScore >= 40 ? "low" : "medium",
         message: data.message,
         details: data.details || {},
         sentences: (data?.sentences || []).map((s: any) => {
-          const rawProb = typeof s.probability === "number" ? s.probability : 0;
-          const normalizedProbability = Math.max(0, Math.min(rawProb > 1 ? rawProb / 100 : rawProb, 1));
+          const probability = typeof s.probability === "number" ? s.probability : 0;
+          const normalizedProbability = Math.max(0, Math.min(probability, 100));
+          const label =
+            normalizedProbability >= 70 ? "AI" :
+            normalizedProbability >= 40 ? "Uncertain" :
+            "Human";
           return {
             text: s.text || "",
             probability: normalizedProbability,
-            label: s.label === "Error" ? "Uncertain" : s.label || "Uncertain",
-            suspicious: s.suspicious ?? false
+            label,
+            suspicious: false
           };
         })
       };
@@ -209,7 +218,7 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("AI Detection failed:", err);
         return {
-          label: "Error",
+          classification: "Error",
           score: 0,
           confidence: "low",
           message: `AI detection unavailable: ${msg}`,
@@ -223,8 +232,8 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
   }
 
   return {
-    label: "Uncertain",
-    score: 0.5,
+    classification: "Uncertain",
+    score: 0,
     confidence: "low",
     message: "AI detection backend unavailable",
     details: {},
