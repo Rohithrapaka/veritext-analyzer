@@ -303,5 +303,5 @@ export async function detectAI(text: string): Promise<AIDetectionResult> {
       humanSignalsDetected: detectHumanSignals(text)
     },
     sentences: []
-  };}
+  };
 }
